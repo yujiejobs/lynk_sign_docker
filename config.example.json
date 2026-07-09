@@ -1,0 +1,18 @@
+{
+  "refresh_token": "bearerXXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX",
+  "device_id": "your-device-id-here",
+  "cron": "0 9 * * *",
+  "auto_share": false,
+  "token_b": [],
+  "share_content_id": "2072260486405246976",
+  "push": {
+    "wecom_webhook": "",
+    "dingtalk_webhook": "",
+    "feishu_webhook": "",
+    "tg_bot_token": "",
+    "tg_chat_id": "",
+    "serverchan_key": "",
+    "pushplus_token": "",
+    "bark_url": ""
+  }
+}

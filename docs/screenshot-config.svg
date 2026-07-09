@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 700" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <rect width="820" height="700" fill="#0f1115"/>
+  <!-- header -->
+  <text x="40" y="46" fill="#e6e8ec" font-size="23" font-weight="700">领克 APP 签到 · 配置中心</text>
+  <text x="40" y="72" fill="#8b909a" font-size="13">配置保存在 config.json，容器内 cron 调度器按计划自动运行。</text>
+  <!-- tabs -->
+  <text x="52" y="112" fill="#e6e8ec" font-size="14" font-weight="600">⚙️ 配置</text>
+  <rect x="40" y="124" width="86" height="2" fill="#3b82f6"/>
+  <text x="150" y="112" fill="#8b909a" font-size="14" font-weight="600">📄 运行日志</text>
+  <line x1="40" y1="125" x2="780" y2="125" stroke="#2c313c" stroke-width="1"/>
+
+  <!-- 运行计划 card -->
+  <rect x="40" y="146" width="740" height="140" rx="12" fill="#1a1d24" stroke="#2c313c"/>
+  <text x="62" y="176" fill="#e6e8ec" font-size="15" font-weight="700">运行计划 (cron)</text>
+  <text x="62" y="198" fill="#8b909a" font-size="13">标准 5 段 cron 表达式（分 时 日 月 周）。修改保存后立即生效。</text>
+  <text x="62" y="228" fill="#e6e8ec" font-size="13" font-weight="600">cron 表达式</text>
+  <rect x="62" y="240" width="480" height="40" rx="8" fill="#22262f" stroke="#2c313c"/>
+  <text x="76" y="265" fill="#e6e8ec" font-size="14" font-family="Consolas,monospace">0 9 * * *</text>
+  <rect x="558" y="240" width="200" height="40" rx="8" fill="#22262f" stroke="#2c313c"/>
+  <text x="574" y="265" fill="#8b909a" font-size="13">常用预设…</text>
+  <text x="738" y="264" fill="#8b909a" font-size="11">▾</text>
+
+  <!-- 主账号 card -->
+  <rect x="40" y="302" width="740" height="196" rx="12" fill="#1a1d24" stroke="#2c313c"/>
+  <text x="62" y="332" fill="#e6e8ec" font-size="15" font-weight="700">主账号</text>
+  <rect x="118" y="320" width="42" height="18" rx="9" fill="#ef44441f"/>
+  <text x="126" y="333" fill="#f87171" font-size="11" font-weight="600">必填</text>
+  <text x="62" y="356" fill="#8b909a" font-size="13">从领克 app 抓包 app-services.lynkco.com.cn 的 mobileCodeLogin 响应里获取。</text>
+  <text x="62" y="386" fill="#e6e8ec" font-size="13" font-weight="600">refreshToken <tspan fill="#8b909a" font-weight="400">28 天有效, bearer&lt;uuid&gt; 格式</tspan></text>
+  <rect x="62" y="398" width="696" height="46" rx="8" fill="#22262f" stroke="#2c313c"/>
+  <text x="76" y="426" fill="#e6e8ec" font-size="13" font-family="Consolas,monospace">bearerXXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX</text>
+  <text x="62" y="470" fill="#e6e8ec" font-size="13" font-weight="600">设备 ID (deviceId) <tspan fill="#8b909a" font-weight="400">登录 URL 的 deviceId 参数</tspan></text>
+  <rect x="62" y="480" width="696" height="0.5" fill="none"/>
+
+  <!-- 自动分享 card (partial) -->
+  <rect x="40" y="514" width="740" height="150" rx="12" fill="#1a1d24" stroke="#2c313c"/>
+  <text x="62" y="544" fill="#e6e8ec" font-size="15" font-weight="700">自动分享刷积分</text>
+  <rect x="168" y="532" width="42" height="18" rx="9" fill="#22262f"/>
+  <text x="176" y="545" fill="#8b909a" font-size="11" font-weight="600">可选</text>
+  <text x="62" y="568" fill="#8b909a" font-size="13">开启后，B 账号会自动点击主账号的分享链接，每天帮主账号刷分享能量体。</text>
+  <!-- toggle on -->
+  <rect x="62" y="586" width="46" height="26" rx="13" fill="#3b82f6"/>
+  <circle cx="95" cy="599" r="10" fill="#ffffff"/>
+  <text x="120" y="596" fill="#e6e8ec" font-size="14" font-weight="600">启用自动分享</text>
+  <text x="120" y="614" fill="#8b909a" font-size="12">关闭时仅生成分享链接，需自己复制到微信发</text>
+
+  <!-- bottom bar -->
+  <rect x="0" y="664" width="820" height="36" fill="#0f1115fa"/>
+  <line x1="0" y1="664" x2="820" y2="664" stroke="#2c313c"/>
+  <rect x="300" y="672" width="86" height="30" rx="8" fill="none" stroke="#2c313c"/>
+  <text x="316" y="691" fill="#8b909a" font-size="13">重新加载</text>
+  <rect x="394" y="672" width="120" height="30" rx="8" fill="none" stroke="#2c313c"/>
+  <text x="410" y="691" fill="#8b909a" font-size="13">保存并立即执行</text>
+  <rect x="522" y="672" width="86" height="30" rx="8" fill="#3b82f6"/>
+  <text x="538" y="691" fill="#ffffff" font-size="13" font-weight="600">保存配置</text>
+</svg>

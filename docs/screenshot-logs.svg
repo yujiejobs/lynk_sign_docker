@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 700" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif">
+  <rect width="820" height="700" fill="#0f1115"/>
+  <!-- header -->
+  <text x="40" y="46" fill="#e6e8ec" font-size="23" font-weight="700">领克 APP 签到 · 配置中心</text>
+  <text x="40" y="72" fill="#8b909a" font-size="13">配置保存在 config.json，容器内 cron 调度器按计划自动运行。</text>
+  <!-- tabs -->
+  <text x="52" y="112" fill="#8b909a" font-size="14" font-weight="600">⚙️ 配置</text>
+  <text x="150" y="112" fill="#e6e8ec" font-size="14" font-weight="600">📄 运行日志</text>
+  <rect x="138" y="124" width="96" height="2" fill="#3b82f6"/>
+  <line x1="40" y1="125" x2="780" y2="125" stroke="#2c313c" stroke-width="1"/>
+
+  <!-- 调度器状态 card -->
+  <rect x="40" y="146" width="740" height="86" rx="12" fill="#1a1d24" stroke="#2c313c"/>
+  <text x="62" y="176" fill="#e6e8ec" font-size="15" font-weight="700">调度器状态</text>
+  <circle cx="70" cy="205" r="4" fill="#8b909a"/>
+  <text x="82" y="209" fill="#8b909a" font-size="13">状态：<tspan fill="#e6e8ec">空闲</tspan></text>
+  <text x="190" y="209" fill="#8b909a" font-size="13">下次运行：<tspan fill="#e6e8ec">2026-07-10 09:00:00</tspan></text>
+  <text x="430" y="209" fill="#8b909a" font-size="13">上次开始：<tspan fill="#e6e8ec">2026-07-09 09:00:01</tspan></text>
+  <text x="640" y="209" fill="#8b909a" font-size="13">上次结果：<tspan fill="#4ade80">成功</tspan></text>
+
+  <!-- 运行记录 card -->
+  <rect x="40" y="248" width="740" height="416" rx="12" fill="#1a1d24" stroke="#2c313c"/>
+  <text x="62" y="278" fill="#e6e8ec" font-size="15" font-weight="700">运行记录</text>
+  <rect x="128" y="266" width="66" height="18" rx="9" fill="#22262f"/>
+  <text x="136" y="279" fill="#8b909a" font-size="11" font-weight="600">保留 35 天</text>
+  <text x="62" y="300" fill="#8b909a" font-size="13">每次运行一条记录，点击查看完整日志。</text>
+
+  <!-- table header -->
+  <text x="62" y="330" fill="#8b909a" font-size="13" font-weight="600">时间</text>
+  <text x="380" y="330" fill="#8b909a" font-size="13" font-weight="600">触发</text>
+  <text x="500" y="330" fill="#8b909a" font-size="13" font-weight="600">状态</text>
+  <text x="640" y="330" fill="#8b909a" font-size="13" font-weight="600">大小</text>
+  <line x1="62" y1="340" x2="758" y2="340" stroke="#2c313c"/>
+  <!-- row 1 (highlighted) -->
+  <rect x="50" y="346" width="720" height="30" fill="#22262f"/>
+  <text x="62" y="366" fill="#e6e8ec" font-size="13" font-family="Consolas,monospace">2026-07-09 09:00:05</text>
+  <text x="380" y="366" fill="#e6e8ec" font-size="13">cron</text>
+  <rect x="500" y="352" width="46" height="18" rx="9" fill="#22c55e26"/>
+  <text x="509" y="365" fill="#4ade80" font-size="11" font-weight="600">成功</text>
+  <text x="640" y="366" fill="#e6e8ec" font-size="13">466 B</text>
+  <line x1="62" y1="376" x2="758" y2="376" stroke="#2c313c"/>
+  <!-- row 2 -->
+  <text x="62" y="398" fill="#e6e8ec" font-size="13" font-family="Consolas,monospace">2026-07-08 09:00:03</text>
+  <text x="380" y="398" fill="#e6e8ec" font-size="13">cron</text>
+  <rect x="500" y="384" width="46" height="18" rx="9" fill="#22c55e26"/>
+  <text x="509" y="397" fill="#4ade80" font-size="11" font-weight="600">成功</text>
+  <text x="640" y="398" fill="#e6e8ec" font-size="13">165 B</text>
+  <line x1="62" y1="408" x2="758" y2="408" stroke="#2c313c"/>
+  <!-- row 3 -->
+  <text x="62" y="430" fill="#e6e8ec" font-size="13" font-family="Consolas,monospace">2026-07-07 21:15:00</text>
+  <text x="380" y="430" fill="#e6e8ec" font-size="13">manual</text>
+  <rect x="500" y="416" width="46" height="18" rx="9" fill="#ef444426"/>
+  <text x="509" y="429" fill="#f87171" font-size="11" font-weight="600">失败</text>
+  <text x="640" y="430" fill="#e6e8ec" font-size="13">193 B</text>
+  <line x1="62" y1="440" x2="758" y2="440" stroke="#2c313c"/>
+
+  <!-- log view -->
+  <rect x="62" y="456" width="696" height="190" rx="8" fill="#0a0c10" stroke="#2c313c"/>
+  <text x="78" y="480" fill="#8b909a" font-size="12" font-family="Consolas,monospace">===== 领克签到运行日志 =====</text>
+  <text x="78" y="498" fill="#8b909a" font-size="12" font-family="Consolas,monospace">触发方式: cron</text>
+  <text x="78" y="516" fill="#8b909a" font-size="12" font-family="Consolas,monospace">开始时间: 2026-07-09 09:00:01</text>
+  <text x="78" y="534" fill="#3a3f4a" font-size="12" font-family="Consolas,monospace">========================================</text>
+  <text x="78" y="558" fill="#cfd3da" font-size="12" font-family="Consolas,monospace">[09:00:01] [OK] accessToken: 缓存命中, 跳过 refresh</text>
+  <text x="78" y="576" fill="#cfd3da" font-size="12" font-family="Consolas,monospace">[09:00:02] [OK] 签到成功! 奖励: +5 能量体</text>
+  <text x="78" y="594" fill="#cfd3da" font-size="12" font-family="Consolas,monospace">[09:00:05] [OK] 全部完成</text>
+  <text x="78" y="618" fill="#3a3f4a" font-size="12" font-family="Consolas,monospace">========================================</text>
+  <text x="78" y="636" fill="#4ade80" font-size="12" font-family="Consolas,monospace">===== EXIT CODE: 0 =====</text>
+
+  <!-- bottom bar -->
+  <line x1="0" y1="664" x2="820" y2="664" stroke="#2c313c"/>
+  <rect x="330" y="672" width="70" height="30" rx="8" fill="none" stroke="#2c313c"/>
+  <text x="352" y="691" fill="#8b909a" font-size="13">刷新</text>
+  <rect x="408" y="672" width="100" height="30" rx="8" fill="#3b82f6"/>
+  <text x="424" y="691" fill="#ffffff" font-size="13" font-weight="600">▶ 立即运行</text>
+</svg>

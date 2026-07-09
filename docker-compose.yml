@@ -1,0 +1,12 @@
+services:
+  lynk-sign:
+    build: .
+    image: lynk-sign:latest
+    container_name: lynk-sign
+    restart: unless-stopped
+    ports:
+      - "8787:8787"        # 浏览器访问 http://<宿主IP>:8787
+    environment:
+      TZ: Asia/Shanghai    # cron 触发时区
+    volumes:
+      - ./data:/data       # 持久化 config.json + logs (35 天日志留存)

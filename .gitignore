@@ -1,0 +1,11 @@
+# 含真实 token, 不要提交 (用 config.example.json 作为模板)
+config.json
+config.json.tmp
+data/
+logs/
+
+# 缓存 / 临时
+__pycache__/
+*.pyc
+*.zip
+.claude/
