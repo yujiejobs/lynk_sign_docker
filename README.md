@@ -18,9 +18,12 @@
 
 ## 🖼️ 界面预览
 
-| 配置页 | 运行日志页 |
-|:---:|:---:|
-| ![配置页](docs/screenshot-config.svg) | ![运行日志](docs/screenshot-logs.svg) |
+
+配置页 
+ ![配置页](docs/screenshot-config.svg) 
+ 
+ 运行日志页
+ ![运行日志](docs/screenshot-logs.svg) 
 
 > 上图为界面示意（数据均为演示用虚构内容）。
 
