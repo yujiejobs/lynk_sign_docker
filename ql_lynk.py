@@ -5,7 +5,7 @@
 ====================================================
 新增:
   - accessToken 本地缓存 (避免每次强制 refresh, 与 app 行为一致)
-  - Markdown 格式推送输出 (企业微信/钉钉/飞书/Telegram/PushPlus/Bark/Server酱)
+  - Markdown 格式推送输出 (企业微信/钉钉/飞书/Telegram/PushPlus/Bark/Server酱/魔法推送)
   - 自动分享任务 (配 LYNK_TOKEN_B, 每天自动刷分享积分)
 
 ★★★ 最简单用法 ★★★
@@ -18,6 +18,10 @@
   LYNK_TOKEN_B           B 账号 refreshToken (逗号分隔, 启用 auto-share 时用)
   LYNK_SHARE_CONTENT_ID  分享文章 ID (默认 2072260486405246976)
   LYNK_AUTO_SHARE        1/true 启用自动分享 (默认 False, 仅生成 URL)
+  LYNK_CACHE_FILE        accessToken 缓存路径 (默认与 config.json 同目录)
+  LYNK_SIGN_CA_KEY       新版签到接口 Key (仅在 APP 轮换时需覆盖)
+  LYNK_SIGN_CA_SECRET    新版签到接口 Secret (仅在 APP 轮换时需覆盖)
+  LYNK_SIGN_PATH         签到端点 (默认 /up/api/v1/user/sign/upgrade)
   PUSH_WECOM_WEBHOOK     企业微信机器人 webhook
   PUSH_DINGTALK_WEBHOOK  钉钉机器人 webhook
   PUSH_FEISHU_WEBHOOK    飞书机器人 webhook
@@ -26,6 +30,8 @@
   PUSH_SERVERCHAN_KEY    Server酱 SendKey
   PUSH_PUSHPLUS_TOKEN    PushPlus Token
   PUSH_BARK_URL          Bark 推送 URL
+  PUSH_MAGICPUSH_URL     魔法推送 API URL (如 https://host/api/push)
+  PUSH_MAGICPUSH_TOKEN   魔法推送接口令牌
 
 青龙定时: 0 9 * * *  (每天 9 点)
 """
@@ -56,11 +62,16 @@ API_BASE = "https://app-api-gw-toc.lynkco.com"
 OAUTH_BASE = "https://app-services.lynkco.com.cn"
 REFRESH_URL = OAUTH_BASE + "/auth/login/refresh"
 
-CA_KEY = "204644386"
-CA_SECRET = "QCl7udM3PB9cOIOwquwPglikFQnzJRsX"
+CA_KEY = os.environ.get("LYNK_CA_KEY", "204644386").strip()
+CA_SECRET = os.environ.get("LYNK_CA_SECRET", "QCl7udM3PB9cOIOwquwPglikFQnzJRsX").strip()
 SIG_HDRS = "X-Ca-Key,X-Ca-Timestamp,X-Ca-Nonce,X-Ca-Signature-Method"
 
-EP_SIGN = "/up/api/v1/user/sign"
+# 2026-07 起签到改用原生 SDK Consumer，不再使用普通 H5 Consumer。
+# 保留环境变量覆盖，便于 APP 再次轮换端点或密钥时无需改代码。
+SIGN_CA_KEY = os.environ.get("LYNK_SIGN_CA_KEY", "203760416").strip()
+SIGN_CA_SECRET = os.environ.get("LYNK_SIGN_CA_SECRET", "e1msl9aqd101gfcjpo873hrs5jg752og").strip()
+EP_SIGN = os.environ.get("LYNK_SIGN_PATH", "/up/api/v1/user/sign/upgrade").strip()
+EP_SIGN_DAY_INFO = os.environ.get("LYNK_SIGN_DAY_INFO_PATH", "/up/api/v1/user/sign/day/info").strip()
 EP_SIGN_INFO = "/up/api/v1/userReward/getContinueDaysAndSignCard"
 EP_ENERGY = "/app/energy/myEnergy"
 EP_TASKS = "/up/api/v1/userReward/getTaskList"           # 签到任务进度 (连续7天/月度/季度/年度)
@@ -136,14 +147,23 @@ LICENSE_USER = "anonymous"
 
 # ==================== accessToken 缓存 ====================
 def get_cache_file():
-    """青龙数据目录 /ql/data 优先, fallback 到 /tmp"""
-    candidates = [
-        "/ql/data/lynk_access_token.json",
-        "/ql/.lynk_access_token.json",
-        "/tmp/lynk_access_token.json",
-        os.path.expanduser("~/.lynk_access_token.json"),
-    ]
+    """返回 accessToken 缓存路径。
+
+    默认和 config.json 放在同一可持久化目录。旧实现在 Windows 上会把
+    ``/ql/data`` 解析到当前盘根目录，意外创建 ``D:\\ql`` 之类的目录。
+    """
+    explicit = os.environ.get("LYNK_CACHE_FILE", "").strip()
+    config_dir = os.path.dirname(os.path.abspath(CONFIG_FILE))
+    candidates = [explicit, os.path.join(config_dir, "lynk_access_token.json")]
+    if os.name != "nt":
+        candidates.extend([
+            "/ql/data/lynk_access_token.json",
+            "/tmp/lynk_access_token.json",
+        ])
+    candidates.append(os.path.expanduser("~/.lynk_access_token.json"))
     for p in candidates:
+        if not p:
+            continue
         try:
             os.makedirs(os.path.dirname(p), exist_ok=True)
             return p
@@ -224,11 +244,13 @@ def gen_nonce():
     return str(uuid.uuid4()).upper()
 
 
-def build_sig(method, path, params=None):
+def build_sig(method, path, params=None, ca_key=None, ca_secret=None, canonical_lowercase=False):
+    ca_key = ca_key or CA_KEY
+    ca_secret = ca_secret or CA_SECRET
     ts = str(int(time.time() * 1000))
     nonce = gen_nonce()
     sh = {
-        "X-Ca-Key": CA_KEY,
+        "X-Ca-Key": ca_key,
         "X-Ca-Nonce": nonce,
         "X-Ca-Signature-Method": "HmacSHA256",
         "X-Ca-Timestamp": ts,
@@ -239,16 +261,50 @@ def build_sig(method, path, params=None):
         url = f"{path}?{q}" if q else path
     parts = [method.upper(), "*/*", "", "application/json", ""]
     for k, v in sh.items():
-        parts.append(f"{k}:{v}")
+        canonical_name = k.lower() if canonical_lowercase else k
+        parts.append(f"{canonical_name}:{v}")
     parts.append(url)
     sig = base64.b64encode(
-        hmac.new(CA_SECRET.encode(), "\n".join(parts).encode(), hashlib.sha256).digest()
+        hmac.new(ca_secret.encode(), "\n".join(parts).encode(), hashlib.sha256).digest()
     ).decode()
     return {
         **sh,
-        "X-Ca-Signature-Headers": SIG_HDRS,
+        "X-Ca-Signature-Headers": (
+            "x-ca-key,x-ca-nonce,x-ca-signature-method,x-ca-timestamp"
+            if canonical_lowercase else SIG_HDRS
+        ),
         "X-Ca-Signature": sig,
         "Accept": "*/*",
+    }
+
+
+def build_native_sig(method, path, body=b"{}"):
+    """Build the native Android SDK signature used by sign/upgrade."""
+    accept = "application/json; charset=utf-8"
+    content_type = "application/json; charset=utf-8"
+    nonce = str(uuid.uuid4())
+    timestamp = str(int(time.time() * 1000))
+    date_header = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime())
+    content_md5 = base64.b64encode(hashlib.md5(body).digest()).decode()
+    canonical_headers = {
+        "x-ca-key": SIGN_CA_KEY,
+        "x-ca-nonce": nonce,
+        "x-ca-timestamp": timestamp,
+    }
+    parts = [method.upper(), accept, content_md5, content_type, date_header]
+    parts.extend(f"{key}:{canonical_headers[key]}" for key in sorted(canonical_headers))
+    parts.append(path)
+    signature = base64.b64encode(
+        hmac.new(SIGN_CA_SECRET.encode(), "\n".join(parts).encode(), hashlib.sha256).digest()
+    ).decode()
+    return {
+        **canonical_headers,
+        "x-ca-signature-headers": "x-ca-nonce,x-ca-key,x-ca-timestamp",
+        "x-ca-signature": signature,
+        "date": date_header,
+        "accept": accept,
+        "content-type": content_type,
+        "content-md5": content_md5,
     }
 
 
@@ -273,6 +329,18 @@ def log(level, msg):
     icons = {"INFO": "[INFO]", "OK": "[OK]", "WARN": "[!]", "ERR": "[X]"}
     icon = icons.get(level, "[INFO]")
     print(f"[{now()}] {icon} {msg}", flush=True)
+
+
+def redact_sensitive(value):
+    """遮盖异常中可能出现的 token / webhook 参数，避免日志泄露凭据。"""
+    text = str(value)
+    text = re.sub(
+        r"(?i)(refreshToken|accessToken|token|key|sendkey)=([^&\s]+)",
+        r"\1=<redacted>",
+        text,
+    )
+    text = re.sub(r"(?i)bearer[0-9a-f-]{20,}", "bearer<redacted>", text)
+    return text
 
 
 def parse_expiry(ts_val):
@@ -333,7 +401,7 @@ def refresh_lynk_token(rt, device_id):
             "refreshExpireAt": dto.get("refreshExpireAt"),
         }, None
     except Exception as e:
-        return None, f"refresh 异常: {type(e).__name__}: {e}"
+        return None, f"refresh 异常: {type(e).__name__}: {redact_sensitive(e)}"
 
 
 def get_access_token(rt_or_at, device_id, force=False):
@@ -379,33 +447,91 @@ def get_access_token(rt_or_at, device_id, force=False):
 
 
 # ==================== 业务 API ====================
-def lynk_call(method, path, token, body=None, params=None):
-    sig = build_sig(method, path, params)
+def response_payload(response):
+    """把 requests.Response 转成稳定的 dict，并保留 HTTP 状态便于诊断。"""
+    try:
+        result = response.json()
+        if isinstance(result, dict):
+            result.setdefault("http_status", response.status_code)
+            return result
+        return {"code": response.status_code, "data": result, "http_status": response.status_code}
+    except Exception:
+        gateway_error = response.headers.get("X-Ca-Error-Message", "")
+        raw = redact_sensitive(response.text[:500])
+        return {
+            "code": response.status_code,
+            "message": redact_sensitive(gateway_error) or raw,
+            "raw": raw,
+            "http_status": response.status_code,
+        }
+
+
+def response_ok(result):
+    return bool(result) and (
+        str(result.get("code")) in ("200", "success") or result.get("success") is True
+    )
+
+
+def lynk_call(
+    method,
+    path,
+    token,
+    body=None,
+    params=None,
+    *,
+    ca_key=None,
+    ca_secret=None,
+    canonical_lowercase=False,
+    extra_headers=None,
+):
+    sig = build_sig(
+        method,
+        path,
+        params,
+        ca_key=ca_key,
+        ca_secret=ca_secret,
+        canonical_lowercase=canonical_lowercase,
+    )
     headers = {
         "token": token,
         "content-type": "application/json",
         **sig,
     }
+    if extra_headers:
+        headers.update(extra_headers)
     try:
         url = f"{API_BASE}{path}"
         if method == "GET":
             r = requests.get(url, headers=headers, params=params, timeout=20)
         else:
             r = requests.post(url, headers=headers, json=body or {}, timeout=20)
-        try:
-            return r.json()
-        except Exception:
-            return {"code": r.status_code, "raw": r.text[:500]}
+        return response_payload(r)
     except Exception as e:
-        return {"code": "EXCEPTION", "message": str(e)}
+        return {"code": "EXCEPTION", "message": redact_sensitive(e)}
 
 
 def lynk_sign_info(token):
     return lynk_call("GET", EP_SIGN_INFO, token)
 
 
+def lynk_sign_day_info(token):
+    return lynk_call("GET", EP_SIGN_DAY_INFO, token)
+
+
 def lynk_do_sign(token):
-    return lynk_call("POST", EP_SIGN, token, body={})
+    body = b"{}"
+    headers = {
+        **build_native_sig("POST", EP_SIGN, body),
+        "token": token,
+        "ca_version": "1",
+        "x-requiretoken": "false",
+        "User-Agent": "ALIYUN-ANDROID-UA",
+    }
+    try:
+        response = requests.post(API_BASE + EP_SIGN, headers=headers, data=body, timeout=20)
+        return response_payload(response)
+    except Exception as e:
+        return {"code": "EXCEPTION", "message": redact_sensitive(e)}
 
 
 def lynk_energy(token):
@@ -511,7 +637,7 @@ def push_text(title, md_text):
 
     不同渠道语法差异:
       - 企业微信 / 钉钉 / Server酱 / 飞书: HTML <a href="URL">text</a>
-      - PushPlus / Bark / Telegram: 标准 markdown [text](url)
+      - PushPlus / Bark / Telegram / 魔法推送: 标准 markdown [text](url)
     """
     results = []
     html_text = _md_to_html(md_text)
@@ -618,6 +744,21 @@ def push_text(title, md_text):
         except Exception as e:
             results.append(f"Bark: X {e}")
 
+    # 8. 魔法推送 (标准 REST API + Bearer 接口令牌)
+    magicpush_url = os.environ.get("PUSH_MAGICPUSH_URL", "").strip()
+    magicpush_token = os.environ.get("PUSH_MAGICPUSH_TOKEN", "").strip()
+    if magicpush_url and magicpush_token:
+        try:
+            r = requests.post(
+                magicpush_url,
+                headers={"Authorization": f"Bearer {magicpush_token}"},
+                json={"title": title, "content": md_text, "type": "markdown"},
+                timeout=10,
+            )
+            results.append(f"魔法推送: {'OK' if r.ok else 'X'}")
+        except Exception as e:
+            results.append(f"魔法推送: X {e}")
+
     return " | ".join(results) if results else "(未配置推送渠道)"
 
 
@@ -720,7 +861,7 @@ def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=Fals
         if not cfg_ok and not env_ok:
             log("WARN", "=" * 60)
             log("WARN", f"refreshToken 已轮换, 但自动写回全部失败!")
-            log("WARN", f"请手动更新 config.json 的 refresh_token={new_rt}")
+            log("WARN", f"请手动更新 config.json 的 refresh_token=...{new_rt[-12:]}")
             log("WARN", "=" * 60)
 
     if refresh_expire_at:
@@ -731,19 +872,27 @@ def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=Fals
     # 2. 账户信息 + 签到状态
     log("INFO", "[2/5] 查询账户信息 + 签到状态...")
 
-    # 2a. 签到状态 (必查, 后面要用)
-    info = lynk_sign_info(access_token)
-    if info.get("code") not in ("200", "success"):
-        log("ERR", f"查询签到状态失败: code={info.get('code')}  message={info.get('message', '')}")
+    # 2a. 今日签到状态 (新版 day/info) + 连续签到数 (旧奖励查询)
+    day_info = lynk_sign_day_info(access_token)
+    if not response_ok(day_info):
+        log("ERR", f"查询签到状态失败: code={day_info.get('code')}  message={day_info.get('message', '')}")
         if not quiet:
-            log("INFO", f"  raw: {json.dumps(info, ensure_ascii=False)[:300]}")
-        push_text("领克签到失败", f"**❌ 查询签到状态失败**\n\n```\n{json.dumps(info, ensure_ascii=False)[:200]}\n```")
+            log("INFO", f"  raw: {json.dumps(day_info, ensure_ascii=False)[:300]}")
+        push_text("领克签到失败", f"**❌ 查询签到状态失败**\n\n```\n{json.dumps(day_info, ensure_ascii=False)[:200]}\n```")
         return 3
 
-    data = info.get("data") or {}
-    sign_status = data.get("signStatus") or data.get("todaySigned") or data.get("status")
-    streak = data.get("continuousSignDays") or data.get("serialDays") or data.get("continueDays") or 0
-    sign_card = data.get("signCardNumber") or 0
+    status_data = day_info.get("data") or {}
+    sign_status = next(
+        (status_data.get(key) for key in ("signStatus", "todaySigned", "status") if status_data.get(key) is not None),
+        None,
+    )
+    continue_info = lynk_sign_info(access_token)
+    continue_data = continue_info.get("data") or {} if response_ok(continue_info) else {}
+    streak = next(
+        (continue_data.get(key) for key in ("continuousSignDays", "serialDays", "continueDays") if continue_data.get(key) is not None),
+        0,
+    )
+    sign_card = continue_data.get("signCardNumber", 0)
     log("OK", f"签到状态: signStatus={sign_status}  连续签到={streak}天  补签卡={sign_card}张")
 
     # 2b. 账户信息 (能量体 + 成长值)
@@ -791,7 +940,7 @@ def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=Fals
         reward = "无新增"
     else:
         sign_resp = lynk_do_sign(access_token)
-        if sign_resp.get("code") in ("200", "success"):
+        if response_ok(sign_resp):
             log("OK", "签到成功!")
             sign_status_str = "✅ 签到成功"
             d = sign_resp.get("data") or {}
@@ -954,6 +1103,8 @@ def main():
         "PUSH_SERVERCHAN_KEY": cfg_push.get("serverchan_key"),
         "PUSH_PUSHPLUS_TOKEN": cfg_push.get("pushplus_token"),
         "PUSH_BARK_URL": cfg_push.get("bark_url"),
+        "PUSH_MAGICPUSH_URL": cfg_push.get("magicpush_url"),
+        "PUSH_MAGICPUSH_TOKEN": cfg_push.get("magicpush_token"),
     }
     for env_key, val in push_map.items():
         if not os.environ.get(env_key) and val:

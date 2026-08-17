@@ -13,6 +13,8 @@
     "tg_chat_id": "",
     "serverchan_key": "",
     "pushplus_token": "",
-    "bark_url": ""
+    "bark_url": "",
+    "magicpush_url": "",
+    "magicpush_token": ""
   }
 }

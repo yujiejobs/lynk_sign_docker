@@ -37,7 +37,7 @@
   .field { margin-bottom: 18px; }
   label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
   label .hint { font-weight: 400; color: var(--muted); margin-left: 6px; }
-  input[type=text], textarea, select {
+  input[type=text], input[type=password], textarea, select {
     width: 100%; background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
     color: var(--text); padding: 10px 12px; font-size: 14px;
     font-family: "SFMono-Regular", Consolas, monospace; transition: border-color .15s;
@@ -187,6 +187,10 @@
       <div class="field"><label>Server 酱 SendKey</label><input type="text" id="serverchan_key" placeholder="SCT..."></div>
       <div class="field"><label>PushPlus Token</label><input type="text" id="pushplus_token" placeholder="..."></div>
       <div class="field"><label>Bark 推送 URL</label><input type="text" id="bark_url" placeholder="https://api.day.app/your-key"></div>
+      <div class="row2">
+        <div class="field"><label>魔法推送 API URL</label><input type="text" id="magicpush_url" placeholder="https://your-host/api/push"></div>
+        <div class="field"><label>魔法推送接口令牌</label><input type="password" id="magicpush_token" placeholder="接口 Token"></div>
+      </div>
     </div>
   </div>
 
@@ -222,7 +226,7 @@
 
 <script>
   const TOP = ["refresh_token", "device_id", "share_content_id", "cron"];
-  const PUSH = ["wecom_webhook","dingtalk_webhook","feishu_webhook","tg_bot_token","tg_chat_id","serverchan_key","pushplus_token","bark_url"];
+  const PUSH = ["wecom_webhook","dingtalk_webhook","feishu_webhook","tg_bot_token","tg_chat_id","serverchan_key","pushplus_token","bark_url","magicpush_url","magicpush_token"];
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
   let statusTimer = null;

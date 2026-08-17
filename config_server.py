@@ -162,6 +162,8 @@ DEFAULT_CONFIG = {
         "serverchan_key": "",
         "pushplus_token": "",
         "bark_url": "",
+        "magicpush_url": "",
+        "magicpush_token": "",
     },
 }
 

@@ -13,7 +13,7 @@
 - ▶️ **手动触发**：配置页「保存并立即执行」/ 日志页「立即运行」
 - 📄 **运行日志**：每次运行一条记录，成功/失败一目了然，保留 35 天，可在线查看
 - 🔄 **Token 自动续期**：refreshToken 轮换后自动写回 `config.json`，不用手动更新
-- 📢 **多渠道推送**：企业微信 / 钉钉 / 飞书 / Telegram / Server酱 / PushPlus / Bark
+- 📢 **多渠道推送**：企业微信 / 钉钉 / 飞书 / Telegram / Server酱 / PushPlus / Bark / 魔法推送
 - 🤝 **自动分享刷积分**：可选，B 账号自动帮主账号刷分享能量体
 
 ## 🖼️ 界面预览
@@ -90,6 +90,10 @@ docker compose up -d --build
 | `share_content_id` | 分享文章 ID，默认热门文章 | |
 | `push.*` | 各推送渠道的 webhook / token（见下） | |
 
+签到写接口自 2026-07 起使用独立的原生 SDK 签名。脚本已内置当前端点与应用级
+Key/Secret；如领克 APP 后续再次轮换，可用 `LYNK_SIGN_CA_KEY`、`LYNK_SIGN_CA_SECRET`、
+`LYNK_SIGN_PATH` 环境变量临时覆盖，无需修改代码。`LYNK_CACHE_FILE` 可覆盖 accessToken 缓存路径。
+
 ### 如何获取 token
 
 用抓包工具（Charles / Stream 等）抓领克 APP：
@@ -122,6 +126,10 @@ docker compose up -d --build
 | `serverchan_key` | Server酱 SendKey |
 | `pushplus_token` | PushPlus Token |
 | `bark_url` | Bark 推送 URL |
+| `magicpush_url` + `magicpush_token` | 魔法推送 API URL（如 `https://host/api/push`）及接口令牌 |
+
+魔法推送也可通过环境变量 `PUSH_MAGICPUSH_URL` 和 `PUSH_MAGICPUSH_TOKEN` 配置；
+环境变量优先于 `config.json`。
 
 ## 📄 运行日志
 
@@ -190,7 +198,7 @@ Docker 用的是 `data/config.json`（通过卷挂载到容器 `/data`）。根�
 
 - 本项目仅供**学习与技术交流**，请勿用于商业或违反领克 APP 用户协议的用途，由此产生的一切后果由使用者自行承担。
 - 你需要**自行抓包获取自己账号的 token**，本项目不提供、不存储任何账号凭据。
-- `ql_lynk.py` 中的 `CA_KEY` / `CA_SECRET` / `APP_CODE` 为 APP 通用接口签名常量（非个人隐私），仅为使脚本能正常调用接口而保留。如你对开源此类常量有顾虑，可自行移除并改由环境变量注入。
+- `ql_lynk.py` 中的 `CA_KEY` / `CA_SECRET` / `SIGN_CA_KEY` / `SIGN_CA_SECRET` / `APP_CODE` 为 APP 通用接口签名常量（非个人隐私），仅为使脚本能正常调用接口而保留。对应值均可由 `LYNK_*` 环境变量覆盖。
 - 请及时同步上游 APP 变更；接口失效属正常现象，欢迎提 PR。
 
 ## 📄 License
