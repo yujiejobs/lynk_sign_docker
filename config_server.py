@@ -192,11 +192,16 @@ def read_config():
 
 def write_config(data):
     """只保留已知字段并原子写入 (临时文件 + os.replace)."""
+    auto_share = data.get("auto_share", False)
+    if isinstance(auto_share, str):
+        auto_share = auto_share.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        auto_share = bool(auto_share)
     clean = {
         "refresh_token": str(data.get("refresh_token", "")).strip(),
         "device_id": str(data.get("device_id", "")).strip(),
         "cron": str(data.get("cron", "") or DEFAULT_CONFIG["cron"]).strip(),
-        "auto_share": bool(data.get("auto_share", False)),
+        "auto_share": auto_share,
         "share_content_id": str(data.get("share_content_id", "")).strip(),
         "push": {k: str((data.get("push") or {}).get(k, "")).strip() for k in DEFAULT_CONFIG["push"]},
     }
@@ -394,9 +399,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(length) if length else b"{}"
-                write_config(json.loads(raw.decode("utf-8")))
+                saved = write_config(json.loads(raw.decode("utf-8")))
                 print(f"[OK] 配置已写入 {CONFIG_FILE}")
-                return self._send(200, {"ok": True, "path": CONFIG_FILE, "next_run": next_run_time()})
+                return self._send(200, {
+                    "ok": True,
+                    "path": CONFIG_FILE,
+                    "auto_share": saved["auto_share"],
+                    "next_run": next_run_time(),
+                })
             except Exception as e:
                 return self._send(400, {"ok": False, "error": f"{type(e).__name__}: {e}"})
         if self.path == "/api/run":

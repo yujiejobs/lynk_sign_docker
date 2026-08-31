@@ -37,7 +37,7 @@
   <text x="62" y="544" fill="#e6e8ec" font-size="15" font-weight="700">自动分享刷积分</text>
   <rect x="168" y="532" width="42" height="18" rx="9" fill="#22262f"/>
   <text x="176" y="545" fill="#8b909a" font-size="11" font-weight="600">可选</text>
-  <text x="62" y="568" fill="#8b909a" font-size="13">开启后匿名访问一次分享链接，无需 B 账号或额外 token。</text>
+  <text x="62" y="568" fill="#8b909a" font-size="13">开启后匿名上报分享任务，无需 B 账号或额外 token。</text>
   <!-- toggle on -->
   <rect x="62" y="586" width="46" height="26" rx="13" fill="#3b82f6"/>
   <circle cx="95" cy="599" r="10" fill="#ffffff"/>

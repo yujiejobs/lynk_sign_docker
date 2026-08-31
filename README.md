@@ -14,7 +14,7 @@
 - 📄 **运行日志**：每次运行一条记录，成功/失败一目了然，保留 35 天，可在线查看
 - 🔄 **Token 自动续期**：refreshToken 轮换后自动写回 `config.json`，不用手动更新
 - 📢 **多渠道推送**：企业微信 / 钉钉 / 飞书 / Telegram / Server酱 / PushPlus / Bark / 魔法推送
-- 🤝 **自动分享刷积分**：可选，匿名访问 H5 分享链接，无需 B 账号
+- 🤝 **自动分享刷积分**：可选，匿名调用 H5 分享上报接口，无需 B 账号
 
 ## 🖼️ 界面预览
 
@@ -85,7 +85,7 @@ docker compose up -d --build
 | `refresh_token` | 主账号 refreshToken（28 天有效，`bearer<uuid>` 格式） | ✅ |
 | `device_id` | 设备 ID（登录 URL 里的 `deviceId` 参数） | ✅ |
 | `cron` | 运行计划，标准 5 段 cron 表达式 | ✅ |
-| `auto_share` | 是否匿名访问一次分享链接（`true`/`false`，无需额外 token） | |
+| `auto_share` | 是否匿名上报分享任务（`true`/`false`，无需额外 token） | |
 | `share_content_id` | 分享文章 ID，默认热门文章 | |
 | `push.*` | 各推送渠道的 webhook / token（见下） | |
 

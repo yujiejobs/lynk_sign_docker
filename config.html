@@ -155,12 +155,12 @@
     <!-- 分享任务 -->
     <div class="card">
       <h2>自动分享刷积分 <span class="tag">可选</span></h2>
-      <p class="desc">开启后会用手机浏览器方式匿名访问一次分享链接，无需 B 账号或额外 token。</p>
+      <p class="desc">开启后按 Chrome H5 的真实请求格式匿名上报分享任务，无需 B 账号或额外 token。</p>
       <div class="field">
         <label class="toggle">
           <input type="checkbox" id="auto_share">
           <span class="switch"></span>
-          <span class="label-text">启用自动分享<small>关闭时仅生成分享链接, 需自己复制到微信发</small></span>
+          <span class="label-text">启用自动分享 <code>auto_share</code><small id="auto_share_state"></small></span>
         </label>
       </div>
       <div class="field">
@@ -245,9 +245,16 @@
   }));
 
   // ---- config ----
+  function updateAutoShareState() {
+    const enabled = $("auto_share").checked;
+    $("auto_share_state").textContent = enabled
+      ? "当前：已开启（保存后写入 true）"
+      : "当前：已关闭（保存后写入 false，仅生成分享链接）";
+  }
   function fill(cfg) {
     TOP.forEach(k => { if ($(k)) $(k).value = cfg[k] || ""; });
     $("auto_share").checked = !!cfg.auto_share;
+    updateAutoShareState();
     const push = cfg.push || {};
     PUSH.forEach(k => { if ($(k)) $(k).value = push[k] || ""; });
   }
@@ -275,7 +282,10 @@
       const r = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(collect()) });
       const res = await r.json().catch(() => ({}));
       if (!r.ok || res.ok === false) throw new Error(res.error || ("HTTP " + r.status));
-      if (!silent) setStatus("✅ 已保存" + (res.next_run ? "，下次运行 " + res.next_run : ""), "ok");
+      if (!silent) {
+        const shareState = $("auto_share").checked ? "自动分享已开启" : "自动分享已关闭";
+        setStatus("✅ 已保存，" + shareState + (res.next_run ? "，下次运行 " + res.next_run : ""), "ok");
+      }
       return true;
     } catch (e) { setStatus("保存失败: " + e.message, "err"); return false; }
     finally { btn.disabled = false; }
@@ -298,6 +308,7 @@
   }
 
   $("cron_preset").addEventListener("change", e => { if (e.target.value) { $("cron").value = e.target.value; e.target.value = ""; } });
+  $("auto_share").addEventListener("change", updateAutoShareState);
   $("save").addEventListener("click", () => saveConfig(false));
   $("save-run").addEventListener("click", saveAndRun);
   $("reload").addEventListener("click", loadConfig);

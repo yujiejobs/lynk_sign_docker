@@ -52,42 +52,70 @@ class LynkScriptTests(unittest.TestCase):
             ql_lynk.CONFIG_FILE = original
 
     def test_sensitive_query_values_are_redacted(self):
-        error = "https://example.test/refresh?refreshToken=bearer12345678-1234-1234-1234-123456789abc&deviceId=ok"
+        error = (
+            "https://example.test/refresh?refreshToken=bearer12345678-1234-1234-1234-123456789abc"
+            "&shareCode=abcdef1234567890&deviceId=ok"
+        )
         redacted = ql_lynk.redact_sensitive(error)
         self.assertNotIn("12345678-1234", redacted)
         self.assertIn("refreshToken=<redacted>", redacted)
+        self.assertNotIn("abcdef1234567890", redacted)
+        self.assertIn("shareCode=<redacted>", redacted)
 
     def test_response_ok_accepts_both_api_shapes(self):
         self.assertTrue(ql_lynk.response_ok({"code": "200"}))
         self.assertTrue(ql_lynk.response_ok({"success": True}))
         self.assertFalse(ql_lynk.response_ok({"code": 400}))
 
-    def test_visit_share_url_is_anonymous_and_checks_main_account_energy(self):
-        response = mock.Mock(status_code=200)
-        response.raise_for_status.return_value = None
-        with mock.patch.object(ql_lynk, "lynk_energy", side_effect=[
-            {"code": "success", "data": {"point": 100}},
-            {"code": "success", "data": {"point": 105}},
-        ]), mock.patch.object(ql_lynk.requests, "get", return_value=response) as get, mock.patch.object(
-            ql_lynk.time, "sleep"
-        ):
-            result = ql_lynk.visit_share_url("https://h5.example.test/share?shareCode=abc", "main-access-token")
+    def test_report_share_task_matches_h5_request_and_uses_task_confirmation(self):
+        response = mock.Mock(
+            status_code=200,
+            headers={"content-type": "application/json"},
+            text='{"code":"success","data":"true","message":"API调用成功"}',
+        )
+        response.json.return_value = {"code": "success", "data": "true", "message": "API调用成功"}
+        with mock.patch.object(ql_lynk.requests, "post", return_value=response) as post:
+            result = ql_lynk.report_share_task(
+                "2072260486405246976",
+                "abc123",
+                share_url="https://h5.example.test/share?shareCode=abc123",
+            )
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["energy_delta"], 5)
-        _, kwargs = get.call_args
+        self.assertTrue(result["confirmed"])
+        self.assertEqual(result["msg"], "分享任务已完成 (任务接口确认)")
+        self.assertNotIn("energy_delta", result)
+        self.assertNotIn("point_delta", result)
+        args, kwargs = post.call_args
+        self.assertEqual(args[0], ql_lynk.API_BASE + ql_lynk.EP_SHARE_REPORT)
+        self.assertEqual(kwargs["params"], {"shareCode": "abc123"})
+        self.assertEqual(kwargs["json"], {
+            "businessNo": "2072260486405246976",
+            "eventData": {"firstClassification": "文章", "secondClassification": ""},
+        })
         self.assertNotIn("Authorization", kwargs["headers"])
         self.assertNotIn("token", {key.lower() for key in kwargs["headers"]})
-        self.assertTrue(kwargs["allow_redirects"])
+        self.assertNotIn("Cookie", kwargs["headers"])
+        self.assertEqual(kwargs["headers"]["X-Ca-Key"], ql_lynk.CA_KEY)
 
-    def test_visit_share_url_reports_http_failure(self):
-        with mock.patch.object(ql_lynk, "lynk_energy", return_value={}), mock.patch.object(
-            ql_lynk.requests, "get", side_effect=ql_lynk.requests.ConnectionError("offline")
-        ):
-            result = ql_lynk.visit_share_url("https://h5.example.test/share", "main-access-token")
+    def test_report_share_task_reports_api_failure(self):
+        response = mock.Mock(status_code=200, headers={"content-type": "application/json"}, text="")
+        response.json.return_value = {"code": "fail", "message": "rejected"}
+        with mock.patch.object(ql_lynk.requests, "post", return_value=response):
+            result = ql_lynk.report_share_task("2072260486405246976", "abc123")
 
         self.assertFalse(result["ok"])
-        self.assertIn("匿名访问失败", result["msg"])
+        self.assertIn("code=fail", result["msg"])
+
+    def test_report_share_task_requires_true_confirmation_data(self):
+        response = mock.Mock(status_code=200, headers={"content-type": "application/json"}, text="")
+        response.json.return_value = {"code": "success", "data": "false", "message": "API调用成功"}
+        with mock.patch.object(ql_lynk.requests, "post", return_value=response):
+            result = ql_lynk.report_share_task("2072260486405246976", "abc123")
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["confirmed"])
+        self.assertIn("data 未确认", result["msg"])
 
     def test_deprecated_b_token_is_not_returned_or_saved(self):
         original = config_server.CONFIG_FILE
@@ -103,6 +131,21 @@ class LynkScriptTests(unittest.TestCase):
                 self.assertNotIn("token_b", saved)
                 with open(config_server.CONFIG_FILE, "r", encoding="utf-8") as config_file:
                     self.assertNotIn("token_b", config_file.read())
+        finally:
+            config_server.CONFIG_FILE = original
+
+    def test_auto_share_switch_persists_true_and_false(self):
+        original = config_server.CONFIG_FILE
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                config_server.CONFIG_FILE = os.path.join(temp_dir, "config.json")
+                enabled = config_server.write_config({"auto_share": True})
+                self.assertIs(enabled["auto_share"], True)
+                self.assertIs(config_server.read_config()["auto_share"], True)
+
+                disabled = config_server.write_config({"auto_share": False})
+                self.assertIs(disabled["auto_share"], False)
+                self.assertIs(config_server.read_config()["auto_share"], False)
         finally:
             config_server.CONFIG_FILE = original
 

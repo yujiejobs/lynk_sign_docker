@@ -6,7 +6,7 @@
 新增:
   - accessToken 本地缓存 (避免每次强制 refresh, 与 app 行为一致)
   - Markdown 格式推送输出 (企业微信/钉钉/飞书/Telegram/PushPlus/Bark/Server酱/魔法推送)
-  - 自动分享任务 (匿名访问 H5 分享链接, 无需 B 账号)
+  - 自动分享任务 (匿名调用 H5 分享上报接口, 无需 B 账号)
 
 ★★★ 最简单用法 ★★★
   1. 编辑下面 USER_CONFIG 块, 把 USER_REFRESH_TOKEN 改成你自己的 (28 天有效的那种)
@@ -74,11 +74,12 @@ EP_SIGN_DAY_INFO = os.environ.get("LYNK_SIGN_DAY_INFO_PATH", "/up/api/v1/user/si
 EP_SIGN_INFO = "/up/api/v1/userReward/getContinueDaysAndSignCard"
 EP_ENERGY = "/app/energy/myEnergy"
 EP_TASKS = "/up/api/v1/userReward/getTaskList"           # 签到任务进度 (连续7天/月度/季度/年度)
-EP_GROWTH = "/app/energy/my/growth"                       # 成长等级 + 成长值
+EP_GROWTH = "/app/energy/my/growth"                       # 成长等级 + 能量体
 
 EP_GET_SHARE_CODE = "/app/v1/task/getShareCode"
+EP_SHARE_REPORT = "/app/v1/task/shareReporting"
 
-# H5 分享链接模板 (手工复制到微信发, 别人点击后给主账号加 5 能量体)
+# H5 分享链接模板 (奖励内容和完成状态以任务接口返回为准)
 SHARE_URL_TEMPLATE = "https://h5.lynkco.com/app-h5/dist/web/pages/exploration/article/index.html?id={cid}&isShare={is_share}&shareCode={code}"
 
 APP_CODE = "3fa3314998bd4195a9fe2df3e85e6a12"
@@ -133,9 +134,6 @@ def update_config_field(key, value):
 # ==================== 配置结束 ====================
 
 # 优先级: 命令行参数 > 环境变量 (LYNK_*) > config.json > 脚本顶部兜底默认值
-
-# 分享每日上限 (后端限频, 超过会报"今日已分享")
-SHARE_DAILY_LIMIT = 1
 
 LICENSE_USER = "anonymous"
 
@@ -329,7 +327,7 @@ def redact_sensitive(value):
     """遮盖异常中可能出现的 token / webhook 参数，避免日志泄露凭据。"""
     text = str(value)
     text = re.sub(
-        r"(?i)(refreshToken|accessToken|token|key|sendkey)=([^&\s]+)",
+        r"(?i)(refreshToken|accessToken|shareCode|token|key|sendkey)=([^&\s]+)",
         r"\1=<redacted>",
         text,
     )
@@ -744,52 +742,72 @@ def push_text(title, md_text):
 
 
 # ==================== 分享任务 (合并到主流程) ====================
-def _energy_point(token):
-    """读取主账号能量体; 查询失败时返回 None."""
-    response = lynk_energy(token)
-    if isinstance(response, dict) and str(response.get("code")) in ("200", "success"):
-        try:
-            return int((response.get("data") or {}).get("point"))
-        except (TypeError, ValueError):
-            pass
-    return None
+def report_share_task(content_id, share_code, share_url=""):
+    """按 Chrome H5 的真实请求匿名上报分享任务.
 
-
-def visit_share_url(share_url, account_token):
-    """模拟手机浏览器匿名访问分享链接.
-
-    account_token 只用于访问前后查询主账号能量体，绝不会发送给 H5 页面。
+    HAR 验证过的请求只需 shareCode、contentId 和应用级 CA 签名，不含
+    token / Cookie / Authorization。是否完成只认分享任务接口返回的 data=true，
+    不再用可能随活动调整的积分或能量体奖励数值判断。
     """
-    result = {"ok": False, "http_status": None, "energy_delta": None, "msg": ""}
-    energy_before = _energy_point(account_token)
+    result = {
+        "ok": False,
+        "confirmed": False,
+        "http_status": None,
+        "api_code": None,
+        "msg": "",
+    }
     headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9",
+        **build_sig("POST", EP_SHARE_REPORT, {"shareCode": share_code}),
+        "Content-Type": "application/json",
+        "Origin": "https://h5.lynkco.com",
+        "Referer": share_url or "https://h5.lynkco.com/",
         "User-Agent": (
             "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
         ),
     }
+    body = {
+        "businessNo": str(content_id),
+        "eventData": {
+            "firstClassification": "文章",
+            "secondClassification": "",
+        },
+    }
     try:
-        response = requests.get(share_url, headers=headers, timeout=20, allow_redirects=True)
-        result["http_status"] = response.status_code
-        response.raise_for_status()
+        response = requests.post(
+            API_BASE + EP_SHARE_REPORT,
+            headers=headers,
+            params={"shareCode": share_code},
+            json=body,
+            timeout=20,
+        )
+        payload = response_payload(response)
     except requests.RequestException as exc:
-        result["msg"] = f"匿名访问失败: {redact_sensitive(exc)}"
+        result["msg"] = f"匿名分享上报失败: {redact_sensitive(exc)}"
         return result
 
-    time.sleep(2)
-    energy_after = _energy_point(account_token)
-    if energy_before is not None and energy_after is not None:
-        result["energy_delta"] = energy_after - energy_before
+    result["http_status"] = payload.get("http_status")
+    result["api_code"] = payload.get("code")
+    if not response_ok(payload):
+        result["msg"] = (
+            f"匿名分享上报失败: HTTP {result['http_status']} "
+            f"code={result['api_code']} {payload.get('message', '')}"
+        ).strip()
+        return result
+
+    report_data = payload.get("data")
+    report_confirmed = report_data is True or (
+        isinstance(report_data, str) and report_data.strip().lower() == "true"
+    )
+    if not report_confirmed:
+        result["msg"] = (
+            "分享上报接口返回 success，但 data 未确认任务完成"
+        )
+        return result
 
     result["ok"] = True
-    if result["energy_delta"] is not None and result["energy_delta"] > 0:
-        result["msg"] = f"HTTP {result['http_status']}, +{result['energy_delta']} 能量体"
-    elif result["energy_delta"] is None:
-        result["msg"] = f"HTTP {result['http_status']}, 已匿名访问 (能量体暂无法校验)"
-    else:
-        result["msg"] = f"HTTP {result['http_status']}, 已匿名访问 (今日可能已完成)"
+    result["confirmed"] = True
+    result["msg"] = "分享任务已完成 (任务接口确认)"
     return result
 
 
@@ -874,22 +892,22 @@ def run(rt, device_id, share_content_id=None, auto_share=False, quiet=False):
     sign_card = continue_data.get("signCardNumber", 0)
     log("OK", f"签到状态: signStatus={sign_status}  连续签到={streak}天  补签卡={sign_card}张")
 
-    # 2b. 账户信息 (能量体 + 成长值)
-    energy_point = "-"
-    energy_income = "-"
-    growth_name = "-"
-    growth_value = "-"
+    # 2b. 账户信息 (积分 + 能量体 + 等级)
+    points_balance = "-"
+    points_income = "-"
+    level_name = "-"
+    energy_balance = "-"
     energy_resp = lynk_energy(access_token)
     if isinstance(energy_resp, dict) and str(energy_resp.get("code")) in ("200", "success"):
         ed = energy_resp.get("data") or {}
-        energy_point = ed.get("point", "-")
-        energy_income = ed.get("incomePoint", "-")
+        points_balance = ed.get("point", "-")
+        points_income = ed.get("incomePoint", "-")
     growth_resp = lynk_growth(access_token)
     if isinstance(growth_resp, dict) and str(growth_resp.get("code")) in ("200", "success"):
         lv = (growth_resp.get("data") or {}).get("accountLevelVo") or {}
-        growth_name = lv.get("name", "-")
-        growth_value = lv.get("growth", "-")
-    log("OK", f"账户: 能量体={energy_point}  累计获得={energy_income}  等级={growth_name}  成长值={growth_value}")
+        level_name = lv.get("name", "-")
+        energy_balance = lv.get("growth", "-")
+    log("OK", f"账户: 积分={points_balance}  累计积分={points_income}  等级={level_name}  能量体={energy_balance}")
 
     # 2c. 签到任务进度 (连续7天/月度/季度/年度)
     # 接口只返回 taskProcess (已签天数), 总天数从任务名 "X天" 里正则提取
@@ -939,8 +957,8 @@ def run(rt, device_id, share_content_id=None, auto_share=False, quiet=False):
     md_lines.append(f"**连续**: {streak} 天  /  补签卡: {sign_card} 张")
     md_lines.append("")
     md_lines.append("**账户信息**:")
-    md_lines.append(f"- 积分余额: **{energy_point}**  /  累计获得: **{energy_income}**")
-    md_lines.append(f"- 成长等级: **{growth_name}**  /  成长值: **{growth_value}**")
+    md_lines.append(f"- 积分余额: **{points_balance}**  /  累计积分: **{points_income}**")
+    md_lines.append(f"- 成长等级: **{level_name}**  /  能量体: **{energy_balance}**")
     if task_progress:
         md_lines.append("")
         md_lines.append("**签到任务进度**:")
@@ -960,13 +978,17 @@ def run(rt, device_id, share_content_id=None, auto_share=False, quiet=False):
     else:
         log("ERR", f"拿不到 shareCode: {sc_resp.get('code') if isinstance(sc_resp, dict) else '?'}  {sc_resp.get('message', '') if isinstance(sc_resp, dict) else ''}")
 
-    # 5. 构造分享 URL; auto-share 开启时匿名访问一次
+    # 5. 构造分享 URL; auto-share 开启时按 H5 真实格式匿名上报
     share_url = ""
     if share_code:
         share_url = build_share_url(share_content_id, share_code)
         if auto_share:
-            log("INFO", "[5/5] auto-share: 匿名访问分享链接...")
-            share_result = visit_share_url(share_url, access_token)
+            log("INFO", "[5/5] auto-share: 匿名上报分享任务...")
+            share_result = report_share_task(
+                share_content_id,
+                share_code,
+                share_url=share_url,
+            )
             mark = "✅" if share_result["ok"] else "❌"
             log("OK" if share_result["ok"] else "ERR", f"  分享 {mark}  {share_result['msg']}")
             md_lines.append("")
@@ -976,16 +998,16 @@ def run(rt, device_id, share_content_id=None, auto_share=False, quiet=False):
 
         log("OK", "")
         log("OK", "━" * 60)
-        log("OK", "📤 分享链接 (复制到微信/朋友圈, 别人点击你得 5 能量体):")
+        log("OK", "📤 分享任务链接:")
         log("OK", share_url)
         log("OK", "━" * 60)
 
     if share_url:
         md_lines.append("")
-        md_lines.append(f"**📤 分享链接** (复制到微信发, 别人点击你 +5 能量体):")
+        md_lines.append("**📤 分享任务链接**:")
         md_lines.append(f"")
         # markdown 链接语法 [文字](url), 企业微信/钉钉/飞书/PushPlus/Bark 都能识别为可点击链接
-        md_lines.append(f"[👉 点击领取 +5 能量体]({share_url})")
+        md_lines.append(f"[👉 点击完成分享任务]({share_url})")
 
     # 5. 构造 markdown 推送
     md_lines.insert(0, f"**时间**: `{now()}`")
