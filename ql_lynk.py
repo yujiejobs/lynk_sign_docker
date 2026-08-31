@@ -6,7 +6,7 @@
 新增:
   - accessToken 本地缓存 (避免每次强制 refresh, 与 app 行为一致)
   - Markdown 格式推送输出 (企业微信/钉钉/飞书/Telegram/PushPlus/Bark/Server酱/魔法推送)
-  - 自动分享任务 (配 LYNK_TOKEN_B, 每天自动刷分享积分)
+  - 自动分享任务 (匿名访问 H5 分享链接, 无需 B 账号)
 
 ★★★ 最简单用法 ★★★
   1. 编辑下面 USER_CONFIG 块, 把 USER_REFRESH_TOKEN 改成你自己的 (28 天有效的那种)
@@ -15,7 +15,6 @@
 可选环境变量 (会覆盖脚本顶部默认值):
   LYNK_REFRESH_TOKEN     主账号 refreshToken (bearer<uuid>)
   LYNK_DEVICE_ID         设备 ID (默认内置)
-  LYNK_TOKEN_B           B 账号 refreshToken (逗号分隔, 启用 auto-share 时用)
   LYNK_SHARE_CONTENT_ID  分享文章 ID (默认 2072260486405246976)
   LYNK_AUTO_SHARE        1/true 启用自动分享 (默认 False, 仅生成 URL)
   LYNK_CACHE_FILE        accessToken 缓存路径 (默认与 config.json 同目录)
@@ -77,10 +76,6 @@ EP_ENERGY = "/app/energy/myEnergy"
 EP_TASKS = "/up/api/v1/userReward/getTaskList"           # 签到任务进度 (连续7天/月度/季度/年度)
 EP_GROWTH = "/app/energy/my/growth"                       # 成长等级 + 成长值
 
-# 分享相关端点 (从 lynk_sign.py 迁移)
-EP_SHARE_CHECK = "/app/v1/task/shareContentContectCheck"
-EP_SHARE_REPORT = "/app/v1/task/shareContentContectReporting"
-EP_SHARE_LOOKUP = "/app/v1/task/shareCodeToUserId"
 EP_GET_SHARE_CODE = "/app/v1/task/getShareCode"
 
 # H5 分享链接模板 (手工复制到微信发, 别人点击后给主账号加 5 能量体)
@@ -105,7 +100,6 @@ CONFIG_FILE = os.environ.get("LYNK_CONFIG_FILE", "").strip() or os.path.join(
 USER_REFRESH_TOKEN = ""
 USER_DEVICE_ID = ""
 USER_AUTO_SHARE = False
-USER_TOKEN_B = ""
 USER_SHARE_CONTENT_ID = "2072260486405246976"
 USER_PUSH_WECOM_WEBHOOK = ""
 
@@ -551,19 +545,6 @@ def get_share_code(token):
     return lynk_call("GET", EP_GET_SHARE_CODE, token)
 
 
-def share_lookup(token, share_code):
-    """点击账号: 反查分享人 userId"""
-    return lynk_call("POST", EP_SHARE_LOOKUP, token, body={"shareCode": share_code})
-
-
-def share_check(token, content_id, share_code):
-    return lynk_call("POST", EP_SHARE_CHECK, token, body={"contentId": content_id, "shareCode": share_code})
-
-
-def share_report(token, content_id, share_code):
-    return lynk_call("POST", EP_SHARE_REPORT, token, body={"contentId": content_id, "shareCode": share_code})
-
-
 def build_share_url(content_id, share_code):
     """根据 contentId + shareCode 构造 H5 分享链接 (微信 / QQ 等可直接点开)
 
@@ -763,59 +744,57 @@ def push_text(title, md_text):
 
 
 # ==================== 分享任务 (合并到主流程) ====================
-def do_share_task(share_client_token, content_id, share_code):
-    """用 share_client_token (B 账号) 给 A 的 shareCode 点分享加分.
+def _energy_point(token):
+    """读取主账号能量体; 查询失败时返回 None."""
+    response = lynk_energy(token)
+    if isinstance(response, dict) and str(response.get("code")) in ("200", "success"):
+        try:
+            return int((response.get("data") or {}).get("point"))
+        except (TypeError, ValueError):
+            pass
+    return None
 
-    返回 dict: { ok, lookup, check, report, energy_delta, msg }
+
+def visit_share_url(share_url, account_token):
+    """模拟手机浏览器匿名访问分享链接.
+
+    account_token 只用于访问前后查询主账号能量体，绝不会发送给 H5 页面。
     """
-    result = {"ok": False, "lookup": "-", "check": "-", "report": "-", "energy_delta": 0, "msg": ""}
+    result = {"ok": False, "http_status": None, "energy_delta": None, "msg": ""}
+    energy_before = _energy_point(account_token)
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+        ),
+    }
+    try:
+        response = requests.get(share_url, headers=headers, timeout=20, allow_redirects=True)
+        result["http_status"] = response.status_code
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        result["msg"] = f"匿名访问失败: {redact_sensitive(exc)}"
+        return result
 
-    # 拿点击前的能量体
-    e0 = lynk_energy(share_client_token)
-    energy_before = 0
-    if isinstance(e0, dict) and str(e0.get("code")) == "success":
-        energy_before = int((e0.get("data") or {}).get("point", 0) or 0)
-
-    # 1. lookup 分享人 userId
-    r1 = share_lookup(share_client_token, share_code)
-    result["lookup"] = r1.get("code", "?")
-
-    # 2. check 接口 (后端前置校验)
-    r2 = share_check(share_client_token, content_id, share_code)
-    result["check"] = r2.get("code", "?")
-    check_msg = r2.get("message", "")
-
-    # 3. report 接口 (真正加分)
-    r3 = share_report(share_client_token, content_id, share_code)
-    result["report"] = r3.get("code", "?")
-    report_msg = r3.get("message", "")
-
-    # 4. 看能量体变化
     time.sleep(2)
-    e1 = lynk_energy(share_client_token)
-    energy_after = 0
-    if isinstance(e1, dict) and str(e1.get("code")) == "success":
-        energy_after = int((e1.get("data") or {}).get("point", 0) or 0)
-    result["energy_delta"] = energy_after - energy_before
+    energy_after = _energy_point(account_token)
+    if energy_before is not None and energy_after is not None:
+        result["energy_delta"] = energy_after - energy_before
 
-    # 判断成功: report 200/success 且能量体增加 (后端规则: +5 能量体 / 次)
-    if str(r3.get("code")) in ("200", "success") and result["energy_delta"] > 0:
-        result["ok"] = True
-        result["msg"] = f"+{result['energy_delta']} 能量体"
-    elif "已分享" in report_msg or "已领取" in report_msg or "今日已" in report_msg or "已结束" in report_msg:
-        result["ok"] = True  # 算成功 (后端拒收是预期行为)
-        result["msg"] = f"今日已分享 ({report_msg})"
-    elif str(r3.get("code")) in ("200", "success"):
-        result["ok"] = True
-        result["msg"] = f"report OK 但 Δ={result['energy_delta']} ({report_msg or check_msg})"
+    result["ok"] = True
+    if result["energy_delta"] is not None and result["energy_delta"] > 0:
+        result["msg"] = f"HTTP {result['http_status']}, +{result['energy_delta']} 能量体"
+    elif result["energy_delta"] is None:
+        result["msg"] = f"HTTP {result['http_status']}, 已匿名访问 (能量体暂无法校验)"
     else:
-        result["msg"] = f"report failed: code={r3.get('code')} {report_msg}"
-
+        result["msg"] = f"HTTP {result['http_status']}, 已匿名访问 (今日可能已完成)"
     return result
 
 
 # ==================== 主流程 ====================
-def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=False, quiet=False):
+def run(rt, device_id, share_content_id=None, auto_share=False, quiet=False):
     """续 token -> 签到 -> 分享 -> 推送"""
     log("INFO", "=" * 60)
     log("INFO", "领克 APP 自动签到 - 青龙面板版 v2")
@@ -981,41 +960,20 @@ def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=Fals
     else:
         log("ERR", f"拿不到 shareCode: {sc_resp.get('code') if isinstance(sc_resp, dict) else '?'}  {sc_resp.get('message', '') if isinstance(sc_resp, dict) else ''}")
 
-    # 5. auto-share: B 账号点击刷积分 (可选, 默认不启用)
-    share_results = []
-    if auto_share and token_b_list and share_code:
-        log("INFO", "[5/5] auto-share: B 账号刷分享积分...")
-        log("INFO", f"  contentId: {share_content_id}  clicker 数: {len(token_b_list)}")
-        for i, tb in enumerate(token_b_list, 1):
-            log("INFO", f"  --- B{i}: refresh & click ---")
-            tb_token, _, _, tb_src = get_access_token(tb, device_id)
-            if not tb_token:
-                log("ERR", f"  B{i} 拿不到 accessToken  (source={tb_src})")
-                log("ERR", f"     → 这个 B token 已失效/无效, 请在领克 app 里重新抓一个")
-                log("ERR", f"     → 抓包域名 app-api-gw-toc.lynkco.com 的请求头 token 字段")
-                share_results.append({"idx": i, "ok": False, "msg": f"❌ token 无效 ({tb_src})", "energy_delta": 0})
-                continue
-            log("OK", f"  B{i} accessToken ({tb_src})")
-            res = do_share_task(tb_token, share_content_id, share_code)
-            res["idx"] = i
-            share_results.append(res)
-            mark = "✅" if res["ok"] else "❌"
-            log("OK" if res["ok"] else "ERR",
-                f"  B{i} 分享 {mark}  {res['msg']}  (Δ能量体 {res['energy_delta']:+d})")
-
-        md_lines.append("")
-        md_lines.append(f"**auto-share** (contentId `{share_content_id[-12:]}`, {len(share_results)} 个 B 账号):")
-        for r in share_results:
-            mark = "✅" if r["ok"] else "❌"
-            md_lines.append(f"- {mark} B{r['idx']}: {r['msg']}  (Δ能量体 `{r['energy_delta']:+d}`)")
-    else:
-        if auto_share and not token_b_list:
-            log("INFO", "[5/5] auto-share 未启用 (未配 LYNK_TOKEN_B)")
-
-    # 6. 构造可手工复制到微信的分享 URL (即便 auto-share 不启用也输出)
+    # 5. 构造分享 URL; auto-share 开启时匿名访问一次
     share_url = ""
     if share_code:
         share_url = build_share_url(share_content_id, share_code)
+        if auto_share:
+            log("INFO", "[5/5] auto-share: 匿名访问分享链接...")
+            share_result = visit_share_url(share_url, access_token)
+            mark = "✅" if share_result["ok"] else "❌"
+            log("OK" if share_result["ok"] else "ERR", f"  分享 {mark}  {share_result['msg']}")
+            md_lines.append("")
+            md_lines.append(f"**auto-share**: {mark} {share_result['msg']}")
+        else:
+            log("INFO", "[5/5] auto-share 未启用 (仅生成分享链接)")
+
         log("OK", "")
         log("OK", "━" * 60)
         log("OK", "📤 分享链接 (复制到微信/朋友圈, 别人点击你得 5 能量体):")
@@ -1049,7 +1007,8 @@ def main():
     parser = argparse.ArgumentParser(description="领克 APP 自动签到 - 青龙面板专用版 v2")
     parser.add_argument("--token", help="LYNK refreshToken (主账号, 覆盖环境变量)")
     parser.add_argument("--device-id", help="LYNK deviceId (覆盖环境变量)")
-    parser.add_argument("--token-b", help="LYNK refreshToken 列表 (B 账号, 逗号分隔, 用于刷分享积分)")
+    # 兼容旧调用，参数已废弃且不再读取。
+    parser.add_argument("--token-b", help=argparse.SUPPRESS)
     parser.add_argument("--content-id", help="分享文章 ID (覆盖环境变量)")
     parser.add_argument("--auto-share", action="store_true", help="启用自动分享任务")
     parser.add_argument("--no-cache", action="store_true", help="忽略 accessToken 缓存, 强制 refresh")
@@ -1077,13 +1036,6 @@ def main():
         log("ERR", "2) 设置环境变量 LYNK_REFRESH_TOKEN, 或")
         log("ERR", "3) 传 --token 参数")
         sys.exit(1)
-
-    # B 账号列表 (config.json 里可以是数组或逗号分隔字符串)
-    cfg_token_b = cfg.get("token_b")
-    if isinstance(cfg_token_b, list):
-        cfg_token_b = ",".join(str(t) for t in cfg_token_b)
-    token_b_raw = args.token_b or os.environ.get("LYNK_TOKEN_B") or cfg_token_b or USER_TOKEN_B
-    token_b_list = [t.strip() for t in token_b_raw.split(",") if t.strip()] if token_b_raw else []
 
     # 分享内容
     share_content_id = args.content_id or os.environ.get("LYNK_SHARE_CONTENT_ID") or cfg.get("share_content_id") or USER_SHARE_CONTENT_ID
@@ -1118,7 +1070,6 @@ def main():
         rc = run(
             rt,
             device_id,
-            token_b_list=token_b_list,
             share_content_id=share_content_id,
             auto_share=auto_share,
             quiet=args.quiet,

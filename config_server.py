@@ -151,7 +151,6 @@ DEFAULT_CONFIG = {
     "device_id": "",
     "cron": "0 9 * * *",
     "auto_share": False,
-    "token_b": [],
     "share_content_id": "2072260486405246976",
     "push": {
         "wecom_webhook": "",
@@ -178,8 +177,12 @@ def read_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f) or {}
-            merged = dict(DEFAULT_CONFIG)
-            merged.update(data)
+            # 只返回当前支持的字段，避免旧版 token_b 等已废弃凭据继续暴露给页面。
+            merged = {
+                key: data.get(key, default)
+                for key, default in DEFAULT_CONFIG.items()
+                if key != "push"
+            }
             merged["push"] = {**DEFAULT_CONFIG["push"], **(data.get("push") or {})}
             return merged
         except Exception as e:
@@ -194,7 +197,6 @@ def write_config(data):
         "device_id": str(data.get("device_id", "")).strip(),
         "cron": str(data.get("cron", "") or DEFAULT_CONFIG["cron"]).strip(),
         "auto_share": bool(data.get("auto_share", False)),
-        "token_b": [str(t).strip() for t in (data.get("token_b") or []) if str(t).strip()],
         "share_content_id": str(data.get("share_content_id", "")).strip(),
         "push": {k: str((data.get("push") or {}).get(k, "")).strip() for k in DEFAULT_CONFIG["push"]},
     }

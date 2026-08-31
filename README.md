@@ -14,7 +14,7 @@
 - 📄 **运行日志**：每次运行一条记录，成功/失败一目了然，保留 35 天，可在线查看
 - 🔄 **Token 自动续期**：refreshToken 轮换后自动写回 `config.json`，不用手动更新
 - 📢 **多渠道推送**：企业微信 / 钉钉 / 飞书 / Telegram / Server酱 / PushPlus / Bark / 魔法推送
-- 🤝 **自动分享刷积分**：可选，B 账号自动帮主账号刷分享能量体
+- 🤝 **自动分享刷积分**：可选，匿名访问 H5 分享链接，无需 B 账号
 
 ## 🖼️ 界面预览
 
@@ -85,8 +85,7 @@ docker compose up -d --build
 | `refresh_token` | 主账号 refreshToken（28 天有效，`bearer<uuid>` 格式） | ✅ |
 | `device_id` | 设备 ID（登录 URL 里的 `deviceId` 参数） | ✅ |
 | `cron` | 运行计划，标准 5 段 cron 表达式 | ✅ |
-| `auto_share` | 是否启用自动分享刷积分（`true`/`false`） | |
-| `token_b` | B 账号 refreshToken 列表（帮主账号点击分享） | |
+| `auto_share` | 是否匿名访问一次分享链接（`true`/`false`，无需额外 token） | |
 | `share_content_id` | 分享文章 ID，默认热门文章 | |
 | `push.*` | 各推送渠道的 webhook / token（见下） | |
 
@@ -179,6 +178,57 @@ python config_server.py --no-browser                 # 不自动打开浏览器
 ```bash
 python ql_lynk.py
 ```
+
+## 📦 青龙面板：商品库存监控
+
+`ql_lynk_stock.py` 是独立的单次检查脚本，用于监控领克商城商品库存。库存查询
+不需要 `refresh_token` 或 `device_id`；脚本默认监控 Eva 智能车载机器人，并在库存
+连续两次大于 0 后通过魔法推送通知。
+
+在青龙环境变量中配置：
+
+```text
+PUSH_MAGICPUSH_URL=https://你的魔法推送地址/api/push
+PUSH_MAGICPUSH_TOKEN=你的接口令牌
+```
+
+要监控多个商品时，`LYNK_STOCK_ITEM_ID` 的值一行填写一个商品 ID：
+
+```text
+5310000100239002
+第二个商品ID
+第三个商品ID
+```
+
+然后新增青龙定时任务：
+
+```text
+名称：领克商品库存监控
+命令：python3 ql_lynk_stock.py
+定时：*/1 * * * *
+```
+
+每个商品使用独立状态文件，例如
+`/ql/data/lynk_stock_5310000100239002.json`。其中一个商品检查失败不会阻断其他商品；
+每个商品只在“无货 → 有货”时推送一次，再次售罄后重新补货会再次通知。建议先在
+青龙中手动执行以下命令验证魔法推送：
+
+```bash
+python3 ql_lynk_stock.py --test-push
+```
+
+测试推送会实时查询 `LYNK_STOCK_ITEM_ID` 中的全部商品，并在一条通知中列出商品名、
+商品 ID、每个 SKU 的库存和当前有货/无货状态；不会修改正式监控状态或触发补货去重。
+
+可选环境变量：
+
+| 字段 | 说明 |
+|------|------|
+| `LYNK_STOCK_ITEM_ID` | 要监控的商品 ID；多个商品一行一个，默认 `5310000100239002` |
+| `LYNK_STOCK_CONFIRMATIONS` | 连续有货确认次数，默认 `2` |
+| `LYNK_STOCK_STATE_FILE` | 自定义状态路径；多商品可使用 `{item_id}` 占位符 |
+| `LYNK_STOCK_REGION` | 省、市、区编码，默认 `110000,110100,110101` |
+| `LYNK_CONFIG_FILE` | 可选，复用已有 `config.json` 中的魔法推送配置 |
 
 ## ❓ 常见问题
 

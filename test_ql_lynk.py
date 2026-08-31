@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 import ql_lynk
+import config_server
 
 
 class LynkScriptTests(unittest.TestCase):
@@ -60,6 +61,50 @@ class LynkScriptTests(unittest.TestCase):
         self.assertTrue(ql_lynk.response_ok({"code": "200"}))
         self.assertTrue(ql_lynk.response_ok({"success": True}))
         self.assertFalse(ql_lynk.response_ok({"code": 400}))
+
+    def test_visit_share_url_is_anonymous_and_checks_main_account_energy(self):
+        response = mock.Mock(status_code=200)
+        response.raise_for_status.return_value = None
+        with mock.patch.object(ql_lynk, "lynk_energy", side_effect=[
+            {"code": "success", "data": {"point": 100}},
+            {"code": "success", "data": {"point": 105}},
+        ]), mock.patch.object(ql_lynk.requests, "get", return_value=response) as get, mock.patch.object(
+            ql_lynk.time, "sleep"
+        ):
+            result = ql_lynk.visit_share_url("https://h5.example.test/share?shareCode=abc", "main-access-token")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["energy_delta"], 5)
+        _, kwargs = get.call_args
+        self.assertNotIn("Authorization", kwargs["headers"])
+        self.assertNotIn("token", {key.lower() for key in kwargs["headers"]})
+        self.assertTrue(kwargs["allow_redirects"])
+
+    def test_visit_share_url_reports_http_failure(self):
+        with mock.patch.object(ql_lynk, "lynk_energy", return_value={}), mock.patch.object(
+            ql_lynk.requests, "get", side_effect=ql_lynk.requests.ConnectionError("offline")
+        ):
+            result = ql_lynk.visit_share_url("https://h5.example.test/share", "main-access-token")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("匿名访问失败", result["msg"])
+
+    def test_deprecated_b_token_is_not_returned_or_saved(self):
+        original = config_server.CONFIG_FILE
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                config_server.CONFIG_FILE = os.path.join(temp_dir, "config.json")
+                with open(config_server.CONFIG_FILE, "w", encoding="utf-8") as config_file:
+                    config_file.write('{"refresh_token":"main","token_b":["secret-b"]}')
+
+                loaded = config_server.read_config()
+                self.assertNotIn("token_b", loaded)
+                saved = config_server.write_config(loaded)
+                self.assertNotIn("token_b", saved)
+                with open(config_server.CONFIG_FILE, "r", encoding="utf-8") as config_file:
+                    self.assertNotIn("token_b", config_file.read())
+        finally:
+            config_server.CONFIG_FILE = original
 
     def test_magicpush_uses_bearer_token_and_markdown_payload(self):
         response = mock.Mock(ok=True)

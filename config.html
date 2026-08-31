@@ -155,17 +155,13 @@
     <!-- 分享任务 -->
     <div class="card">
       <h2>自动分享刷积分 <span class="tag">可选</span></h2>
-      <p class="desc">开启后, B 账号会自动点击主账号的分享链接, 每天帮主账号刷分享能量体。</p>
+      <p class="desc">开启后会用手机浏览器方式匿名访问一次分享链接，无需 B 账号或额外 token。</p>
       <div class="field">
         <label class="toggle">
           <input type="checkbox" id="auto_share">
           <span class="switch"></span>
           <span class="label-text">启用自动分享<small>关闭时仅生成分享链接, 需自己复制到微信发</small></span>
         </label>
-      </div>
-      <div class="field">
-        <label>B 账号 refreshToken <span class="hint">每行一个, 用于帮主账号点击分享</span></label>
-        <textarea id="token_b" placeholder="bearerXXXXXXXX-XXXX-...&#10;bearerYYYYYYYY-YYYY-..."></textarea>
       </div>
       <div class="field">
         <label>分享文章 ID <span class="hint">contentId, 默认热门文章</span></label>
@@ -252,8 +248,6 @@
   function fill(cfg) {
     TOP.forEach(k => { if ($(k)) $(k).value = cfg[k] || ""; });
     $("auto_share").checked = !!cfg.auto_share;
-    const tb = cfg.token_b;
-    $("token_b").value = Array.isArray(tb) ? tb.join("\n") : (tb || "");
     const push = cfg.push || {};
     PUSH.forEach(k => { if ($(k)) $(k).value = push[k] || ""; });
   }
@@ -261,7 +255,6 @@
     const cfg = { push: {} };
     TOP.forEach(k => cfg[k] = $(k).value.trim());
     cfg.auto_share = $("auto_share").checked;
-    cfg.token_b = $("token_b").value.split(/[\n,]/).map(s => s.trim()).filter(Boolean);
     PUSH.forEach(k => cfg.push[k] = $(k).value.trim());
     return cfg;
   }
