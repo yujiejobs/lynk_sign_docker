@@ -60,7 +60,14 @@ CA_KEY = "204644386"
 CA_SECRET = "QCl7udM3PB9cOIOwquwPglikFQnzJRsX"
 SIG_HDRS = "X-Ca-Key,X-Ca-Timestamp,X-Ca-Nonce,X-Ca-Signature-Method"
 
-EP_SIGN = "/up/api/v1/user/sign"
+# 签到写接口只认 App 原生通道的 key, h5 那套会被网关挡掉
+NATIVE_KEY = "203760416"
+NATIVE_SECRET = "e1msl9aqd101gfcjpo873hrs5jg752og"
+NATIVE_APPCODE = "SWGeelyCode"
+
+EP_SIGN = "/up/api/v1/user/sign"                      # 旧路径, 已废弃: toc 403 / app-services 400
+EP_SIGN_UPGRADE = "/up/api/v1/user/sign/upgrade"      # App 里真正的签到接口
+EP_SIGN_DAY = "/up/api/v1/user/sign/day/info"         # 唯一带 signStatus 的接口
 EP_SIGN_INFO = "/up/api/v1/userReward/getContinueDaysAndSignCard"
 EP_ENERGY = "/app/energy/myEnergy"
 EP_TASKS = "/up/api/v1/userReward/getTaskList"           # 签到任务进度 (连续7天/月度/季度/年度)
@@ -265,6 +272,30 @@ except Exception:
     _LOCAL_TZ = timezone(timedelta(hours=_off))
 
 
+def native_headers(path, token, body=b""):
+    """App 原生通道签名 (阿里云网关标准格式)。"""
+    ts, nonce = str(int(time.time() * 1000)), uuid.uuid4().hex
+    sh = {
+        "x-ca-appcode": NATIVE_APPCODE,
+        "x-ca-key": NATIVE_KEY,
+        "x-ca-nonce": nonce,
+        "x-ca-timestamp": ts,
+        "token": token or "",
+    }
+    ctype = "application/json; charset=utf-8"
+    md5 = base64.b64encode(hashlib.md5(body).digest()).decode() if body else ""
+    signed = "\n".join(f"{k}:{sh[k]}" for k in sorted(sh))
+    string_to_sign = "\n".join(["POST", ctype, md5, ctype, "", signed, path])
+    sig = base64.b64encode(
+        hmac.new(NATIVE_SECRET.encode(), string_to_sign.encode(), hashlib.sha256).digest()
+    ).decode()
+    headers = {**sh, "accept": ctype, "content-type": ctype,
+               "x-ca-signature": sig, "x-ca-signature-headers": ",".join(sorted(sh))}
+    if md5:
+        headers["content-md5"] = md5
+    return headers
+
+
 def now():
     return datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -401,11 +432,25 @@ def lynk_call(method, path, token, body=None, params=None):
 
 
 def lynk_sign_info(token):
-    return lynk_call("GET", EP_SIGN_INFO, token)
+    """day/info 给 signStatus, EP_SIGN_INFO 给连续天数和补签卡。"""
+    day = lynk_call("GET", EP_SIGN_DAY, token)
+    info = lynk_call("GET", EP_SIGN_INFO, token)
+    if str(day.get("code")) not in ("200", "success"):
+        return day
+    data = dict(day.get("data") or {})
+    if str(info.get("code")) in ("200", "success"):
+        data.update(info.get("data") or {})
+    return {"code": "200", "success": True, "data": data}
 
 
 def lynk_do_sign(token):
-    return lynk_call("POST", EP_SIGN, token, body={})
+    body = b"{}"
+    try:
+        r = requests.post(f"{API_BASE}{EP_SIGN_UPGRADE}", data=body, timeout=20,
+                          headers=native_headers(EP_SIGN_UPGRADE, token, body))
+        return r.json()
+    except Exception as e:
+        return {"code": "EXCEPTION", "message": str(e)}
 
 
 def lynk_energy(token):
@@ -741,7 +786,8 @@ def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=Fals
         return 3
 
     data = info.get("data") or {}
-    sign_status = data.get("signStatus") or data.get("todaySigned") or data.get("status")
+    # 0 是"未签到", 用 or 链会被吞成 None
+    sign_status = data["signStatus"] if "signStatus" in data else data.get("status")
     streak = data.get("continuousSignDays") or data.get("serialDays") or data.get("continueDays") or 0
     sign_card = data.get("signCardNumber") or 0
     log("OK", f"签到状态: signStatus={sign_status}  连续签到={streak}天  补签卡={sign_card}张")
@@ -791,10 +837,14 @@ def run(rt, device_id, token_b_list=None, share_content_id=None, auto_share=Fals
         reward = "无新增"
     else:
         sign_resp = lynk_do_sign(access_token)
-        if sign_resp.get("code") in ("200", "success"):
+        d = sign_resp.get("data") or {}
+        if sign_resp.get("code") in ("200", "success") and d.get("todayFirstSign") is False:
+            log("OK", "今天已经签过了")
+            sign_status_str = "✅ 已签到"
+            reward = "无新增"
+        elif sign_resp.get("code") in ("200", "success"):
             log("OK", "签到成功!")
             sign_status_str = "✅ 签到成功"
-            d = sign_resp.get("data") or {}
             parts = []
             if d.get("rewardEnergyNumber"):    parts.append(f"+{d['rewardEnergyNumber']} 能量体")
             if d.get("rewardPointNumber"):    parts.append(f"+{d['rewardPointNumber']} Co积分")
